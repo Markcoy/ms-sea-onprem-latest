@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RFID Reader</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      background-color: #f4f4f4;
+      margin: 0;
+      padding: 0;
+    }
+
+    h1 {
+      color: #333;
+      background:rgb(218, 216, 216);
+    }
+
+   /* CSS for modal */
+.modal {
+  display: none; /* Hide the modal by default */
+  position: fixed; /* Position the modal relative to the viewport */
+  z-index: 9999; /* Set a high z-index to ensure it appears above other elements */
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.4); /* Semi-transparent background */
+}
+
+.modal-content {
+  background-color: #fefefe;
+  margin: 15% auto; /* Center the modal vertically and horizontally */
+  padding: 20px;
+  border: 1px solid #888;
+  width: 80%;
+  max-width: 600px; /* Set maximum width for the modal */
+  border-radius: 5px;
+  position: relative; /* Set position to relative for close button positioning */
+}
+
+/* Close button for the modal */
+.close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  font-size: 20px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+/* Adjust table z-index to ensure it's behind the modal */
+#rfid-table-container {
+  position: relative; /* Set position to relative */
+  z-index: 1; /* Set a lower z-index compared to the modal */
+  overflow-y: auto; /* Enable vertical scrolling */
+  max-height: 400px;
+}
+
+
+    #rfid-table {
+      border-collapse: collapse;
+      width: 100%;
+      background-color: #fff;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    }
+
+    #rfid-table th{
+      background-color: #6ab2ff;
+      
+    }
+    #rfid-table th, #rfid-table td {
+      border: 1px solid #707070;
+      padding: 12px;
+      text-align: left;
+    }
+
+    #rfid-tag {
+      margin: 20px auto;
+      padding: 15px;
+      border: 1px solid #ccc;
+      max-width: 400px;
+      background-color: #fff;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    }
+
+    #send-to-database-btn {
+      margin: 10px;
+      padding: 15px;
+      background-color: #007bff;
+      color: #fff;
+      border: none;
+      cursor: pointer;
+      font-size: 16px;
+      border-radius: 5px;
+    }
+
+    #send-to-database-btn:hover {
+      background-color: #0056b3;
+    }
+
+    #search-bar {
+      margin-top: 20px;
+      margin-bottom: 20px;
+    }
+
+    #search-input {
+      padding: 8px;
+      margin-right: 10px;
+    }
+
+  </style>
+  <script>
+    
+    
+    const socket = new WebSocket('ws://localhost:3000');
+
+    // Connection opened
+    socket.addEventListener('open', (event) => {
+      console.log('WebSocket connection opened');
+    });
+
+    // Listen for messages
+    socket.addEventListener('message', (event) => {
+      const data = JSON.parse(event.data);
+      console.log(`Received RFID Tag ID: ${data.tagId} at ${data.timestamp}`);
+      updateTable(data);
+    });
+
+    // Error event handler
+socket.addEventListener('error', (error) => {
+  console.error('WebSocket encountered an error:', error);
+});
+
+    // Connection closed event handler
+socket.addEventListener('close', (event) => {
+  console.log('WebSocket connection closed. Attempting to reconnect...');
+  // Attempt to reconnect after a delay
+  setTimeout(() => {
+    socket = new WebSocket('ws://localhost:3000');
+  }, 3000); // Reconnect after 3 seconds
+});
+
+// Fetch the IPv4 address from the server
+fetch('/get-ip')
+      .then(response => response.json())
+      .then(data => {
+        // Display the IPv4 address in the HTML
+        document.getElementById('ipv4').textContent = data.ipv4;
+      })
+      .catch(error => console.error('Error fetching IPv4 address:', error));
+
+// Wait for the DOM content to be fully loaded
+document.addEventListener("DOMContentLoaded", function () {
+  // Get the modal
+  const modal = document.getElementById("myModal");
+
+  // Get the close button inside the modal
+  const closeButton = modal.querySelector(".close");
+
+  // When the close button is clicked, close the modal
+  closeButton.addEventListener("click", function () {
+    modal.style.display = "none";
+  });
+
+  // When the user clicks anywhere outside of the modal, close it
+  window.addEventListener("click", function (event) {
+    if (event.target === modal) {
+      modal.style.display = "none";
+    }
+  });
+
+  // Get all buttons that open the modal
+  const buttons = document.querySelectorAll("button[data-document-id]");
+
+  // Loop through each button and attach a click event listener
+  buttons.forEach(function (button) {
+    button.addEventListener("click", function () {
+      modal.style.display = "block";
+    });
+  });
+});
+
+
+// Handle form submission for authentication and document deletion
+const authForm = document.getElementById("authForm");
+authForm.addEventListener("submit", function(event) {
+  event.preventDefault();
+  const username = document.getElementById("username").value;
+  const password = document.getElementById("password").value;
+  const documentId = modal.dataset.documentId;
+
+  // Prepare request body with username, password, and documentId
+  const requestBody = {
+    username: username,
+    password: password,
+    documentId: documentId
+  };
+
+  // Make an AJAX request to delete the document from the database
+  fetch(`/api/delete-document`, {
+    method: 'DELETE',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(requestBody)
+  })
+  .then(response => {
+    if (!response.ok) {
+      throw new Error('Error deleting document');
+    }
+    console.log('Document deleted successfully');
+    // Close the modal
+    modal.style.display = "none";
+  })
+  .catch(error => console.error('Error:', error));
+});
+
+
+    function updateTable(data) {
+    const rfidTable = document.getElementById('rfid-table').getElementsByTagName('tbody')[0];
+    let existingRow = null;
+
+    // Find an existing row with the same Tag ID and Event ID
+    for (let i = 0; i < rfidTable.rows.length; i++) {
+        const row = rfidTable.rows[i];
+        if (row.cells[0].innerText === data.tagId && row.cells[10].innerText === data.evt_TagId) {
+            existingRow = row;
+            break;
+        }
+    }
+
+  // If the Tag ID already exists, update the existing row
+  if (existingRow) {
+    if (data.timeType === 'TimeIN' && !existingRow.cells[1].innerText) {
+        existingRow.cells[1].innerText = formatTimestamp(data.timestamp);
+        const timeIn = new Date(existingRow.cells[1].innerText);
+        const timeOut = new Date(data.timestamp);
+        const { formattedDuration } = calculateDuration(timeIn, timeOut);
+        existingRow.cells[3].innerText = formattedDuration;
+
+        sendToEvpnotdones({
+            tagId: data.tagId,
+            timeIn: timeIn.toISOString(),
+            timeOut: timeOut.toISOString(),
+            duration: formattedDuration,
+        });
+    } else if (data.timeType === 'TimeOUT' && !existingRow.cells[2].innerText) {
+        existingRow.cells[2].innerText = formatTimestamp(data.timestamp);
+
+        // Calculate and update the duration
+        const timeIn = new Date(existingRow.cells[1].innerText);
+        const timeOut = new Date(data.timestamp);
+        const { formattedDuration } = calculateDuration(timeIn, timeOut);
+        existingRow.cells[3].innerText = formattedDuration;
+
+        // Send the RFID data (including duration) to the server
+        sendToServer({
+            tagId: data.tagId,
+            timeIn: timeIn.toISOString(),
+            timeOut: timeOut.toISOString(),
+            duration: formattedDuration,
+        });
+    }
+}
+ else {
+    // If the Tag ID does not exist, insert a new row at the top (FIFO)
+    const newRow = rfidTable.insertRow(0);
+    
+    // Insert cells into the new row
+    const tagIdCell = newRow.insertCell(0);
+    const timeInCell = newRow.insertCell(1);
+    const timeOutCell = newRow.insertCell(2);
+    const durationCell = newRow.insertCell(3);
+    const firstnameCell = newRow.insertCell(4);
+    const lastnameCell = newRow.insertCell(5);
+    const courseCell = newRow.insertCell(6);
+    const sectionCell = newRow.insertCell(7);
+    const studentNumCell = newRow.insertCell(8);
+    const usr_TypeCell = newRow.insertCell(9);
+    const evt_TagIdCell = newRow.insertCell(10);
+    const evt_TitleCell = newRow.insertCell(11);
+    const evt_HostOrgCell = newRow.insertCell(12);
+    const deleteCell = newRow.insertCell(13); // New cell for delete button
+
+    // Set the cell values
+    tagIdCell.innerText = data.tagId;
+    timeInCell.innerText = data.timeType === 'TimeIN' ? formatTimestamp(data.timestamp) : '';
+    timeOutCell.innerText = data.timeType === 'TimeOUT' ? formatTimestamp(data.timestamp) : '';
+    durationCell.innerText = '';
+    firstnameCell.innerText = data.user.usr_FirstName || '';  // Update with user information
+    lastnameCell.innerText = data.user.usr_LastName || '';  // Update with user information
+    courseCell.innerText = data.user.usr_Course || '';  // Update with user information
+    sectionCell.innerText = data.user.usr_Section || '';  // Update with user information
+    studentNumCell.innerText = data.user.usr_StudentNum || '';  // Update with user information
+    usr_TypeCell.innerText = data.user.usr_Type || '';  // Update with user information
+    evt_TagIdCell.innerText = data.evt_TagId || '';  // Update with event information
+    evt_TitleCell.innerText = data.evt_Title || '';
+    evt_HostOrgCell.innerText = data.evt_HostOrg || '';
+
+    if (data.timeType === 'TimeIN') {
+      const timeIn = new Date(newRow.cells[1].innerText);
+      const timeOut = new Date(data.timestamp);
+      const { formattedDuration } = calculateDuration(timeIn, timeOut);
+      newRow.cells[3].innerText = formattedDuration;
+
+      // Send the RFID data (including duration) to the server
+      sendToEvpnotdones({
+        tagId: data.tagId,
+        timeIn: timeIn.toISOString(),
+        timeOut: timeOut.toISOString(),
+        duration: formattedDuration,
+      });
+    }
+    // If the new row represents a Time OUT event, calculate and update the duration
+    if (data.timeType === 'TimeOUT') {
+      const timeIn = new Date(newRow.cells[1].innerText);
+      const timeOut = new Date(data.timestamp);
+      const { formattedDuration } = calculateDuration(timeIn, timeOut);
+      newRow.cells[3].innerText = formattedDuration;
+
+      // Send the RFID data (including duration) to the server
+      sendToServer({
+        tagId: data.tagId,
+        timeIn: timeIn.toISOString(),
+        timeOut: timeOut.toISOString(),
+        duration: formattedDuration,
+      });
+    }
+
+    // Create the delete button
+    const deleteButton = document.createElement('button');
+    deleteButton.innerText = 'Delete';
+    deleteButton.onclick = function() {
+      deleteRow(this);
+    };
+
+    // Append the delete button to the delete cell
+    deleteCell.appendChild(deleteButton);
+  }
+
+  // Update the Scanned RFID Tag ID
+  const tagIdElement = document.getElementById('tag-id');
+  tagIdElement.innerText = data.tagId;
+}
+
+// Function to delete a row when the delete button is clicked
+function deleteRow(button) {
+  // Display the modal for username and password input
+  document.getElementById('myModal').style.display = 'block';
+
+  // Save the reference to the button for later use
+  const deleteButton = button;
+
+  // Add an event listener to the submit button inside the modal
+  document.getElementById('authForm').addEventListener('submit', async function(event) {
+    // Prevent the form from submitting
+    event.preventDefault();
+
+    // Get the entered username and password
+    const username = document.getElementById('username').value;
+    const password = document.getElementById('password').value;
+
+    try {
+      // Check if the entered username and password are correct and the user type is "Admin"
+      const isAuthenticated = await checkCredentials(username, password);
+      if (!isAuthenticated) {
+        alert('Invalid username or password. Please try again.');
+        return;
+      }
+
+      // Proceed with deletion if credentials are correct
+      proceedWithDeletion(deleteButton, username, password);
+    } catch (error) {
+      console.error('Error:', error);
+    }
+  });
+}
+
+// Function to check the entered username and password
+async function checkCredentials(username, password) {
+  try {
+    // Make a POST request to your backend API endpoint with the username and password
+    const response = await fetch('/api/validate-credentials', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ username, password })
+    });
+
+    // Parse the response JSON
+    const data = await response.json();
+
+    // Return true if credentials are valid, otherwise false
+    return data.isValidCredentials;
+  } catch (error) {
+    console.error('Error checking credentials:', error);
+    return false;
+  }
+}
+
+
+
+
+// Function to proceed with deletion after authentication
+async function proceedWithDeletion(button, username, password, id) {
+  try {
+    // Check if the entered username and password are correct and the user type is "Admin"
+    const isAuthenticated = await checkCredentials(username, password);
+    if (!isAuthenticated) {
+      alert('Invalid username or password. Please try again.');
+      return;
+    }
+
+    // Close the modal
+    document.getElementById('myModal').style.display = 'none';
+
+    // Get the document ID from the button's dataset
+    const documentId = button.dataset.documentId;
+
+    // Access the parent row
+    const row = button.parentNode.parentNode;
+
+    // Remove the row from the table
+    row.parentNode.removeChild(row);
+
+    // Make an AJAX request to delete the document from the database
+    const response = await fetch(`/api/delete-document/${documentId}`, {
+      method: 'DELETE'
+    });
+
+    // Check if the response is OK
+    if (!response.ok) {
+      throw new Error('Error deleting document');
+    }
+
+    console.log('Document deleted successfully');
+
+  } catch (error) {
+    console.error('Error:', error);
+  }
+}
+
+
+
+
+    // Function to format the timestamp
+    function formatTimestamp(timestamp) {
+      const formattedTimestamp = new Intl.DateTimeFormat('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        timeZoneName: 'short',
+      }).format(new Date(timestamp));
+
+      return formattedTimestamp;
+    }
+
+    // Function to calculate the duration between two timestamps
+    function calculateDuration(timeIn, timeOut) {
+      const durationInMilliseconds = timeOut - timeIn;
+      const durationInSeconds = Math.floor(durationInMilliseconds / 1000);
+      const hours = Math.floor(durationInSeconds / 3600);
+      const minutes = Math.floor((durationInSeconds % 3600) / 60);
+      const seconds = durationInSeconds % 60;
+
+      // Format the duration for display
+      const formattedDuration = `${hours}h ${minutes}m ${seconds}s`;
+
+      return {
+        formattedDuration,
+        durationInSeconds, // You might want to keep the raw duration value for database storage
+      };
+    }
+
+    // Function to send RFID data to the server
+    function sendToServer(data) {
+      // Check if duration is present before sending to the server
+      if (data.duration) {
+        // Format the timestamp before sending to the server
+        const dataToSend = {
+          tagId: data.tagId,
+          timeIn: new Date(data.timeIn).toLocaleString(),
+          timeOut: new Date(data.timeOut).toLocaleString(),
+          duration: data.duration,
+        };
+
+        // Use fetch API to send data to the server
+        fetch('/send-to-database', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(dataToSend),
+        })
+          .then(response => response.text())
+          .then(data => console.log(data))
+          .catch(error => console.error('Error sending RFID data to the server:', error));
+      }
+    }
+
+     function sendToEvpnotdones(data) {
+  // Format the timestamp before sending to the server
+  const dataToSend = {
+    tagId: data.tagId,
+    timeIn: new Date(data.timeIn).toLocaleString(),
+    timeOut: '',
+    duration: '',
+  };
+
+  // Use fetch API to send data to the server
+  fetch('/time-in', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(dataToSend),
+  })
+    .then(response => response.text())
+    .then(data => console.log(data))
+    .catch(error => console.error('Error sending RFID data to the server:', error));
+}
+
+    // Function to filter table rows by selected criteria
+    function filterTable() {
+      const input = document.getElementById('search-input');
+      const filter = input.value.toUpperCase();
+      const table = document.getElementById('rfid-table');
+      const tbody = table.getElementsByTagName('tbody')[0];
+      const rows = tbody.getElementsByTagName('tr');
+
+      const criteria = document.querySelector('input[name="filter-criteria"]:checked').value;
+
+      for (let i = 0; i < rows.length; i++) {
+        const cell = rows[i].getElementsByTagName('td')[criteria];
+        if (cell) {
+          const textValue = cell.textContent || cell.innerText;
+          if (textValue.toUpperCase().indexOf(filter) > -1) {
+            rows[i].style.display = '';
+          } else {
+            rows[i].style.display = 'none';
+          }
+        }
+      }
+    }
+  </script>
+
+</head>
+<body>
+   <!-- Modal for username and password input -->
+   <div id="myModal" class="modal">
+    <div class="modal-content">
+      <span class="close">&times;</span>
+      <h2>Authentication Required</h2>
+      <form id="authForm">
+        <label for="username">Username:</label>
+        <input type="text" id="username" name="username" required>
+        <label for="password">Password:</label>
+        <input type="password" id="password" name="password" required>
+        <button type="submit">Submit</button>
+      </form>
+    </div>
+  </div>
+  <h1>RFID Tag Reader Logs</h1>
+  <h3>IPv4 Address: <span id="ipv4" style="color: green;"></span></h3>
+
+  <!-- Search Bar -->
+  <div id="search-bar">
+    <input type="text" id="search-input" onkeyup="filterTable()" placeholder="Search">
+    <input type="radio" name="filter-criteria" value="4" onclick="filterTable()"> First Name
+    <input type="radio" name="filter-criteria" value="5" onclick="filterTable()"> Last Name
+    <input type="radio" name="filter-criteria" value="6" onclick="filterTable()"> Course
+    <input type="radio" name="filter-criteria" value="7" onclick="filterTable()"> Section
+    <input type="radio" name="filter-criteria" value="8" onclick="filterTable()"> Student Number
+    <input type="radio" name="filter-criteria" value="9" onclick="filterTable()"> User Type
+    <input type="radio" name="filter-criteria" value="10" onclick="filterTable()"> Event ID
+    <input type="radio" name="filter-criteria" value="11" onclick="filterTable()"> Event Title
+    <input type="radio" name="filter-criteria" value="12" onclick="filterTable()"> Host Org
+  </div>
+
+  <!-- RFID Data Table Container with Scroll Bar -->
+  <div id="rfid-table-container">
+    <table id="rfid-table">
+      <thead>
+        <tr>
+          <th>Tag ID</th>
+          <th>Time In</th>
+          <th>Time Out</th>
+          <th>Duration</th>
+          <th>User First Name</th>
+          <th>User Last Name</th>
+          <th>User Course</th>
+          <th>User Section</th>
+          <th>User Student Number</th>
+          <th>User Type</th>
+          <th>Event Tag ID</th>
+          <th>Event Title</th>
+          <th>Event Host Org</th>
+          <th>Action</th> <!-- New column for delete button -->
+      </tr>
+  </thead>
+  <tbody>
+    <% data1.forEach(item => { %>
+      <tr>
+          <td><%= item.tagId %></td>
+          <td><%= item.timeIn %></td>
+          <td><%= item.timeOut %></td>
+          <td><%= item.duration %></td>
+          <td><%= item.usr_FirstName %></td>
+          <td><%= item.usr_LastName %></td>
+          <td><%= item.usr_Course %></td>
+          <td><%= item.usr_Section %></td>
+          <td><%= item.usr_StudentNum %></td>
+          <td><%= item.usr_Type %></td>
+          <td><%= item.evt_TagId %></td>
+          <td><%= item.evt_Title %></td>
+          <td><%= item.evt_HostOrg %></td>
+          <td><button onclick="deleteRow(this)" data-document-id="<%= item._id %>">Delete</button></td>
+
+      </tr>
+  <% }); %>
+  <% data2.forEach(item => { %>
+    <tr>
+        <td><%= item.tagId %></td>
+        <td><%= item.timeIn %></td>
+        <td><%= item.timeOut %></td>
+        <td><%= item.duration %></td>
+        <td><%= item.usr_FirstName %></td>
+        <td><%= item.usr_LastName %></td>
+        <td><%= item.usr_Course %></td>
+        <td><%= item.usr_Section %></td>
+        <td><%= item.usr_StudentNum %></td>
+        <td><%= item.usr_Type %></td>
+        <td><%= item.evt_TagId %></td>
+        <td><%= item.evt_Title %></td>
+        <td><%= item.evt_HostOrg %></td>
+        <td><button onclick="deleteRow(this)" data-document-id="<%= item._id %>">Delete</button></td>
+    </tr>
+<% }); %>
+  </tbody>
+</table>
+  </div>
+
+  <!-- Scanned RFID Tag ID -->
+  <div id="rfid-tag">
+    <p>Scanned RFID Tag ID: <span id="tag-id"></span></p>
+  </div>
+
+</body>
+</html>
